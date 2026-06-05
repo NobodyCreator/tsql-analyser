@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>T-SQL Analyser</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f5f5;
+      color: #1a1a1a;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+
+    .sub {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 1.25rem;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 200px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 13px;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: #fff;
+      color: #1a1a1a;
+      resize: vertical;
+      line-height: 1.6;
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: #888;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    button {
+      padding: 8px 18px;
+      font-size: 13px;
+      font-weight: 500;
+      border-radius: 8px;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      background: #fff;
+      color: #1a1a1a;
+    }
+
+    button:hover { background: #f0f0f0; }
+
+    button.primary {
+      background: #1a1a1a;
+      color: #fff;
+      border-color: transparent;
+    }
+
+    button.primary:hover { opacity: 0.85; }
+
+    .results { margin-top: 1.5rem; }
+
+    .score-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 1.25rem;
+      padding: 12px 16px;
+      border-radius: 12px;
+      border: 1px solid #ddd;
+      background: #fff;
+    }
+
+    .score-num {
+      font-size: 28px;
+      font-weight: 500;
+      min-width: 40px;
+    }
+
+    .score-label { font-size: 13px; color: #666; }
+
+    .score-tag {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 3px 10px;
+      border-radius: 20px;
+      margin-left: auto;
+    }
+
+    .tag-good { background: #EAF3DE; color: #3B6D11; }
+    .tag-warn { background: #FAEEDA; color: #854F0B; }
+    .tag-bad  { background: #FCEBEB; color: #A32D2D; }
+
+    .issue {
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      margin-bottom: 10px;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    .issue-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: #f9f9f9;
+      border-bottom: 1px solid #eee;
+    }
+
+    .sev {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+
+    .sev-high { background: #FCEBEB; color: #A32D2D; }
+    .sev-med  { background: #FAEEDA; color: #854F0B; }
+    .sev-low  { background: #EAF3DE; color: #3B6D11; }
+
+    .issue-title {
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .issue-body {
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #444;
+      line-height: 1.6;
+    }
+
+    .issue-body code {
+      font-family: 'Consolas', monospace;
+      font-size: 12px;
+      background: #f0f0f0;
+      padding: 1px 5px;
+      border-radius: 4px;
+      color: #1a1a1a;
+    }
+
+    .snippet {
+      font-family: 'Consolas', monospace;
+      font-size: 12px;
+      background: #f9f9f9;
+      padding: 8px 12px;
+      border-radius: 6px;
+      margin-top: 8px;
+      word-break: break-all;
+      border-left: 3px solid #E24B4A;
+    }
+
+    .snippet.med  { border-left-color: #EF9F27; }
+    .snippet.low  { border-left-color: #639922; }
+
+    .line-ref {
+      font-size: 11px;
+      color: #999;
+      margin-top: 4px;
+    }
+
+    .empty {
+      text-align: center;
+      padding: 2rem;
+      color: #666;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <h1>T-SQL Analyser</h1>
+    <p class="sub">Paste a query to detect common performance anti-patterns</p>
+
+    <textarea id="qry" spellcheck="false" placeholder="Paste your T-SQL query here..."></textarea>
+
+    <div class="actions">
+      <button class="primary" onclick="analyse()">Analyse</button>
+      <button onclick="loadDemo()">Load example</button>
+      <button onclick="clearAll()">Clear</button>
+      <button onclick="shareUrl()">Share</button>
+      <button onclick="copyResults()">Copy results</button>
+    </div>
+
+    <div class="results" id="out"></div>
+
+  </div>
+
+  <script>
+
+      const DEMO = `SELECT o.OrderID, o.OrderDate, o.TotalAmount
+FROM tbl_Orders o
+WHERE CAST(o.OrderDate AS DATE) = '2024-06-01'
+  AND CONVERT(VARCHAR, o.CreatedAt, 103) = '01/06/2024'
+  AND o.StatusID NOT IN (SELECT StatusID FROM tbl_Status WHERE IsActive = 0)
+  AND EXISTS (
+    SELECT 1 FROM tbl_OrderItems i
+    WHERE i.OrderID = o.OrderID
+      AND i.Quantity > 0
+      AND EXISTS (
+        SELECT 1 FROM warehouse.dbo.tbl_Stock s
+        WHERE s.ProductID = i.ProductID
+      )
+  )
+  AND o.CustomerID IN (SELECT CustomerID FROM reporting.dbo.tbl_Customers WHERE Region = 'North')
+ORDER BY o.OrderDate`;
+
+    function loadDemo() {
+      document.getElementById('qry').value = DEMO;
+      analyse();
+    }
+
+    function clearAll() {
+      document.getElementById('qry').value = '';
+      document.getElementById('out').innerHTML = '';
+    }
+
+    function getLineNum(sql, idx) {
+      return sql.substring(0, idx).split('\n').length;
+    }
+
+
+     // Returns the trimmed text of the line containing character index idx
+    function getLineText(sql, idx) {
+      return sql.split('\n')[getLineNum(sql, idx) - 1].trim();
+    }
+
+    // Returns true if character at idx sits within one of the given SQL clauses
+    // (WHERE, ON, JOIN, HAVING) without a FROM or SELECT appearing after the clause keyword
+    function isInFilterClause(sql, idx) {
+      const clauses = ['WHERE', 'ON', 'HAVING'];
+      const before = sql.substring(0, idx).toUpperCase();
+      const hits = clauses
+        .map(c => ({ c, i: before.lastIndexOf(c) }))
+        .filter(x => x.i >= 0);
+
+      if (!hits.length) return false;
+
+      const nearest = hits.reduce((a, b) => a.i > b.i ? a : b);
+      const afterNearest = before.substring(nearest.i + nearest.c.length);
+
+      // If FROM or SELECT appears after the clause keyword, we're likely inside a subquery list
+      return !/\bFROM\b|\bSELECT\b/.test(afterNearest);
+    }
+
+    // Returns true if an EXISTS block (starting at idx) references an outer query alias —
+    // i.e. it is correlated
+    function isCorrelated(sql, idx) {
+      const block = sql.substring(idx, idx + 400);
+      const outerAliases = (sql.substring(0, idx).match(/\b(?:FROM|JOIN)\s+\w+\s+(\w+)/gi) || [])
+        .map(s => s.split(/\s+/).pop().toUpperCase());
+      return outerAliases.some(alias => new RegExp('\\b' + alias + '\\.', 'i').test(block));
+    }
+
+
+    function shareUrl() {
+      const sql = document.getElementById('qry').value.trim();
+      if (!sql) return;
+      const encoded = btoa(unescape(encodeURIComponent(sql)));
+      const url = location.href.split('?')[0] + '?q=' + encoded;
+      navigator.clipboard.writeText(url).then(() => alert('Link copied to clipboard'));
+    }
+
+        window.addEventListener('load', () => {
+      const params = new URLSearchParams(location.search);
+      if (params.get('q')) {
+        try {
+          document.getElementById('qry').value = decodeURIComponent(escape(atob(params.get('q'))));
+          analyse();
+        } catch {}
+      }
+    });
+
+    function analyse() {
+      const sql = document.getElementById('qry').value.trim();
+
+      if (!sql) {
+        document.getElementById('out').innerHTML = '<p class="empty">Paste a query above first.</p>';
+        return;
+      }
+
+      function copyResults() {
+        const issues = document.querySelectorAll('.issue');
+        if (!issues.length) return;
+
+        let text = '';
+        issues.forEach(el => {
+          const sev = el.querySelector('.sev').textContent;
+          const title = el.querySelector('.issue-title').textContent;
+          const snippet = el.querySelector('.snippet').textContent;
+          const line = el.querySelector('.line-ref').textContent;
+          text += `[${sev}] ${title}\n${line}\n${snippet}\n\n`;
+        });
+
+        navigator.clipboard.writeText(text.trim()).then(() => alert('Results copied'));
+      }
+
+      const issues = [];
+      const upper = sql.toUpperCase();
+      let m;
+
+      //1: CAST / CONVERT wrapping a column in a filter clause
+      const castRx = /\b(CAST|CONVERT)\s*\(/gi;
+      while ((m = castRx.exec(sql)) !== null) {
+        const inFilter = isInFilterClause(sql, m.index);
+        issues.push({
+          sev: inFilter ? 'high' : 'med',
+          title: inFilter
+            ? `${m[1].toUpperCase()}() on column in filter — index seek blocked`
+            : `${m[1].toUpperCase()}() on column — verify placement`,
+          body: inFilter
+            ? `Wrapping a column in <code>${m[1].toUpperCase()}()</code> forces SQL Server to evaluate the function on every row — it cannot use an index seek. Remove the wrapper and rewrite the comparison value instead.`
+            : `<code>${m[1].toUpperCase()}()</code> found outside a filter — less critical, but review if used on large datasets.`,
+          snippet: getLineText(sql, m.index),
+          snippetClass: inFilter ? '' : 'med',
+          line: getLineNum(sql, m.index)
+        });
+      }
+
+      //2: EXISTS subqueries (correlated + cross-database)
+      const existsRx = /\bEXISTS\s*\(\s*SELECT/gi;
+      while ((m = existsRx.exec(upper)) !== null) {
+        const block = sql.substring(m.index, m.index + 400);
+        const crossDb = /[a-zA-Z0-9_]+\.[a-zA-Z0-9_]+\.dbo\./i.test(block);
+        const correlated = isCorrelated(sql, m.index);
+
+        if (crossDb) {
+          issues.push({
+            sev: 'high',
+            title: 'Cross-database EXISTS subquery',
+            body: 'This <code>EXISTS</code> references another database. Cross-database subqueries prevent the optimiser from building an efficient unified plan. Materialise the result into a temp table first.',
+            snippet: getLineText(sql, m.index),
+            snippetClass: '',
+            line: getLineNum(sql, m.index)
+          });
+        } else if (correlated) {
+          issues.push({
+            sev: 'med',
+            title: 'Correlated EXISTS subquery — re-executes per outer row',
+            body: 'This <code>EXISTS</code> references a column from the outer query, so SQL Server re-runs it once per row. On large tables this is expensive. Consider rewriting as a <code>JOIN</code> or materialising the inner set in a CTE.',
+            snippet: getLineText(sql, m.index),
+            snippetClass: 'med',
+            line: getLineNum(sql, m.index)
+          });
+        }
+      }
+
+      //3: IN (SELECT ...)
+      const inSelectRx = /\bIN\s*\(\s*SELECT\b/gi;
+      while ((m = inSelectRx.exec(upper)) !== null) {
+        const block = sql.substring(m.index, m.index + 300);
+        const crossDb = /[a-zA-Z0-9_]+\.[a-zA-Z0-9_]+\.dbo\./i.test(block);
+        issues.push({
+          sev: crossDb ? 'high' : 'med',
+          title: crossDb ? 'Cross-database IN (SELECT ...)' : 'IN (SELECT ...) — consider EXISTS or JOIN',
+          body: `<code>IN (SELECT ...)</code> is often less efficient than <code>EXISTS</code> or a <code>JOIN</code>${crossDb ? ', and this one crosses database boundaries which further limits the optimiser' : ''}. Rewrite with <code>EXISTS</code> to give the optimiser more flexibility.`,
+          snippet: getLineText(sql, m.index),
+          snippetClass: crossDb ? '' : 'med',
+          line: getLineNum(sql, m.index)
+        });
+      }
+
+      //4: NOT IN (SELECT ...) NULL-unsafe
+      const notInRx = /\bNOT\s+IN\s*\(\s*SELECT\b/gi;
+      while ((m = notInRx.exec(upper)) !== null) {
+        issues.push({
+          sev: 'high',
+          title: 'NOT IN (SELECT ...) — NULL-unsafe and often slow',
+          body: '<code>NOT IN (SELECT ...)</code> silently returns no rows if the subquery contains any <code>NULL</code>. It also tends to produce worse plans than <code>NOT EXISTS</code>. Replace with <code>NOT EXISTS (...)</code> or a <code>LEFT JOIN ... WHERE x IS NULL</code>.',
+          snippet: getLineText(sql, m.index),
+          snippetClass: '',
+          line: getLineNum(sql, m.index)
+        });
+      }
+
+      //5: Other functions wrapping columns in filter clauses ---
+      const funcRx = /\b(ISNULL|LEN|LEFT|RIGHT|UPPER|LOWER|LTRIM|RTRIM|TRIM|YEAR|MONTH|DAY|DATEPART|FORMAT)\s*\(\s*[a-zA-Z_]\w*\.[a-zA-Z_]\w*/gi;
+      while ((m = funcRx.exec(sql)) !== null) {
+        if (isInFilterClause(sql, m.index)) {
+          issues.push({
+            sev: 'med',
+            title: `${m[1].toUpperCase()}() wrapping column in filter — index unusable`,
+            body: `Applying <code>${m[1].toUpperCase()}()</code> to a column in a filter prevents index seeks. Move the function to the comparison value side instead, or use a computed column with an index.`,
+            snippet: getLineText(sql, m.index),
+            snippetClass: 'med',
+            line: getLineNum(sql, m.index)
+          });
+        }
+      }
+
+      //6: NOLOCK hints
+      const nolockRx = /\bWITH\s*\(\s*NOLOCK\s*\)/gi;
+      while ((m = nolockRx.exec(sql)) !== null) {
+        issues.push({
+          sev: 'med',
+          title: 'WITH (NOLOCK) — dirty reads and phantom data',
+          body: 'Reads uncommitted data including rows from transactions that may roll back. Can return inconsistent, duplicate, or missing rows. Rarely the right fix — if you need better read performance, consider <code>READ_COMMITTED_SNAPSHOT</code> at the database level instead.',
+          snippet: getLineText(sql, m.index),
+          snippetClass: 'med',
+          line: getLineNum(sql, m.index)
+        });
+      }
+      
+      const starRx = /SELECT\s+\*/gi;
+      while ((m = starRx.exec(upper)) !== null) {
+        // Ignore SELECT * inside EXISTS (SELECT * ...) — that's fine
+        const before = sql.substring(Math.max(0, m.index - 25), m.index + 10);
+        if (!/EXISTS\s*\(\s*SELECT\s*\*/i.test(before)) {
+          issues.push({
+            sev: 'low',
+            title: 'SELECT * — retrieves all columns',
+            body: 'Selecting all columns prevents covering index usage and transfers unnecessary data over the wire. Name only the columns your application actually needs.',
+            snippet: getLineText(sql, m.index),
+            snippetClass: 'low',
+            line: getLineNum(sql, m.index)
+          });
+        }
+      }
+
+      render(issues);
+    }
+
+    function render(issues) {
+      const out = document.getElementById('out');
+
+      if (!issues.length) {
+        out.innerHTML = `
+          <div class="score-bar">
+            <span class="score-num" style="color:#639922">0</span>
+            <div>
+              <div style="font-size:14px;font-weight:500">No issues found</div>
+              <div class="score-label">Query looks clean from a static analysis perspective</div>
+            </div>
+            <span class="score-tag tag-good">Clean</span>
+          </div>`;
+        return;
+      }
+
+      const high = issues.filter(i => i.sev === 'high').length;
+      const med  = issues.filter(i => i.sev === 'med').length;
+      const low  = issues.filter(i => i.sev === 'low').length;
+
+      const tagClass = high > 0 ? 'tag-bad' : med > 1 ? 'tag-warn' : 'tag-good';
+      const tagLabel = high > 0 ? 'Needs attention' : med > 0 ? 'Review recommended' : 'Minor issues';
+      const scoreColor = high > 0 ? '#E24B4A' : med > 0 ? '#EF9F27' : '#639922';
+
+      // Sort: high first, then med, then low
+      const order = { high: 0, med: 1, low: 2 };
+      issues.sort((a, b) => order[a.sev] - order[b.sev]);
+
+      let html = `
+        <div class="score-bar">
+          <span class="score-num" style="color:${scoreColor}">${issues.length}</span>
+          <div>
+            <div style="font-size:14px;font-weight:500">${issues.length} issue${issues.length !== 1 ? 's' : ''} detected</div>
+            <div class="score-label">${high} high &nbsp;·&nbsp; ${med} medium &nbsp;·&nbsp; ${low} low</div>
+          </div>
+          <span class="score-tag ${tagClass}">${tagLabel}</span>
+        </div>`;
+
+      for (const iss of issues) {
+        const sevLabel = iss.sev === 'high' ? 'High' : iss.sev === 'med' ? 'Medium' : 'Low';
+        html += `
+          <div class="issue">
+            <div class="issue-header">
+              <span class="sev sev-${iss.sev}">${sevLabel}</span>
+              <span class="issue-title">${iss.title}</span>
+            </div>
+            <div class="issue-body">
+              ${iss.body}
+              <div class="snippet ${iss.snippetClass}">${escHtml(iss.snippet)}</div>
+              <div class="line-ref">Line ${iss.line}</div>
+            </div>
+          </div>`;
+      }
+
+      out.innerHTML = html;
+    }
+
+    function escHtml(s) {
+      return s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+  </script>
+</body>
+</html>
