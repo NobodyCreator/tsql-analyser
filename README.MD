@@ -46,6 +46,9 @@ An `EXISTS` subquery that references a column from the outer query re-executes o
 **Other functions wrapping columns in filters**
 `YEAR()`, `MONTH()`, `LEFT()`, `UPPER()`, and similar functions applied to a column in a filter clause have the same index-blocking effect as `CAST()`.
 
+**`WITH (NOLOCK)`**
+Reads uncommitted data including rows from transactions that may still roll back. Can return inconsistent, duplicate, or missing rows. Rarely the right fix — consider `READ_COMMITTED_SNAPSHOT` at the database level instead.
+
 ---
 
 ### Low severity
@@ -63,9 +66,11 @@ Working across multiple SQL Server environments I kept seeing the same patterns 
 
 ## Usage
 
-1. Open `index.html` in any browser
-2. Paste a T-SQL query (or click **Load example** to check it out)
+1. Open `index.html` in any browser 
+2. Paste a T-SQL query (or click **Load example**)
 3. Click **Analyse**
+4. Use **Share** to generate a URL with the query pre-loaded
+5. Use **Copy results** to export findings as plain text
 
 ---
 
